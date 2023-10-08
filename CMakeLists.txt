@@ -6,7 +6,10 @@ endif (POLICY CMP0048)
 
 project(ping VERSION 0.1 LANGUAGES C)
 
-set(SRC src/main.c)
+set(SRC
+  src/main.c
+  src/args.c
+)
 
 include_directories(include)
 add_executable(${PROJECT_NAME} ${SRC})
