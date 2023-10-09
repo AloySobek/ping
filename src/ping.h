@@ -29,6 +29,7 @@ struct context {
     int sleep;
     int status;
     int socketfd;
+    int data_size;
     int sent_messages_count;
     int received_messages_count;
 
@@ -38,14 +39,9 @@ struct context {
 
     struct sockaddr resolved_address;
 
+    char numeric_resolved_address[INET_ADDRSTRLEN + 1];
     char reverse_resolved_address[NI_MAXHOST];
     char reverse_resolved_port[NI_MAXSERV];
-};
-
-struct header {
-    struct icmp header;
-
-    char message[64 + sizeof(struct icmp)];
 };
 
 #endif
