@@ -2,6 +2,8 @@
 
 volatile static int running = 1;
 
+static struct context *context = NULL;
+
 // Initialize ping state
 struct context *create_context(char *requested_address) {
     struct context *context = (struct context *)malloc(sizeof(struct context));
@@ -81,17 +83,6 @@ int dns_lookup(struct context *context) {
     return 0;
 }
 
-// Performs reverse dns lookup
-int reverse_dns_lookup(struct context *context) {
-    if (getnameinfo(&context->resolved_address, sizeof(struct sockaddr),
-                    context->reverse_resolved_address, NI_MAXHOST, context->reverse_resolved_port,
-                    NI_MAXSERV, 0)) {
-        return 1;
-    }
-
-    return 0;
-}
-
 unsigned short checksum(void *b, int len) {
     unsigned short *buf = b, result;
     unsigned int sum = 0;
@@ -129,10 +120,17 @@ void initial_print(struct context *context) {
 }
 
 void final_print(struct context *context) {
-    printf("--- %s ping statistics ---\n", context->requested_address);
+    printf("\n--- %s ping statistics ---\n", context->requested_address);
     printf("%d packets transmitted, %d received, %.1f%% packet loss, time %.0fms\n",
            context->sent_packets, context->received_packets,
-           ((float)context->sent_packets / 100.0f) * context->received_packets, context->time);
+           (100.0f / ((float)context->sent_packets)) *
+               (context->sent_packets - context->received_packets),
+           context->time);
+
+    if (!context->received_packets) {
+        return;
+    }
+
     printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", context->min, context->avg,
            context->max, calculate_standard_deviation(context));
 }
@@ -159,14 +157,11 @@ int ping(struct context *context) {
     }
 
     struct timespec start, end;
-    struct timespec p_start, p_end;
 
-    clock_gettime(CLOCK_MONOTONIC, &p_start);
+    clock_gettime(CLOCK_MONOTONIC, &context->start);
 
     while (running) {
-        struct icmp header;
-
-        memset(&header, 0, sizeof(struct icmp));
+        struct icmp header = {0};
 
         char *data = (char *)malloc(sizeof(char) * context->data_size);
 
@@ -200,11 +195,23 @@ int ping(struct context *context) {
 
         socklen_t len = sizeof(received_address);
 
+        char reverse_resolved_address[NI_MAXHOST];
+        char reverse_resolved_port[NI_MAXSERV];
+
         int bytes_received = 0;
 
-        if ((bytes_received =
-                 recvfrom(context->socketfd, buffer, sizeof(struct icmp) + context->data_size, 0,
-                          &received_address, &len)) > 0) {
+        struct msghdr msg = {0};
+        struct iovec iov[1];
+
+        iov[0].iov_base = buffer;
+        iov[0].iov_len = sizeof(struct icmp) + context->data_size;
+
+        msg.msg_name = &received_address;
+        msg.msg_namelen = len;
+        msg.msg_iov = iov;
+        msg.msg_iovlen = 1;
+
+        if ((bytes_received = recvmsg(context->socketfd, &msg, 0)) > 0) {
             clock_gettime(CLOCK_MONOTONIC, &end);
 
             // recvfrom returns ip header, so we must account for that
@@ -231,8 +238,13 @@ int ping(struct context *context) {
 
                 ++context->received_packets;
 
+                if (getnameinfo(&received_address, sizeof(struct sockaddr),
+                                reverse_resolved_address, NI_MAXHOST, reverse_resolved_port,
+                                NI_MAXSERV, 0)) {
+                }
+
                 printf("%d bytes from %s (%s): icmp_seq=%d ttl=%d, time=%.1f ms\n",
-                       bytes_received - ip_header_len, context->reverse_resolved_address,
+                       bytes_received - ip_header_len, reverse_resolved_address,
                        context->numeric_resolved_address, context->sent_packets - 1, context->ttl,
                        rtt);
             } else {
@@ -245,15 +257,28 @@ int ping(struct context *context) {
         usleep(context->sleep * 1000000);
     }
 
-    clock_gettime(CLOCK_MONOTONIC, &p_end);
+    clock_gettime(CLOCK_MONOTONIC, &context->end);
 
-    context->time = (p_end.tv_sec - p_start.tv_sec) * 1000.0 +
-                    (((double)(p_end.tv_nsec - p_start.tv_nsec)) / 1000000.0f);
+    context->time = (context->end.tv_sec - context->start.tv_sec) * 1000.0 +
+                    (((double)(context->end.tv_nsec - context->start.tv_nsec)) / 1000000.0f);
 
     return 0;
 }
 
-void int_handler(int _) { running = 0; }
+void int_handler(int _) {
+    running = 0;
+
+    clock_gettime(CLOCK_MONOTONIC, &context->end);
+
+    context->time = (context->end.tv_sec - context->start.tv_sec) * 1000.0 +
+                    (((double)(context->end.tv_nsec - context->start.tv_nsec)) / 1000000.0f);
+
+    final_print(context);
+
+    free_context(context);
+
+    exit(0);
+}
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -264,16 +289,12 @@ int main(int argc, char **argv) {
 
     signal(SIGINT, int_handler);
 
-    struct context *context = create_context(argv[1]);
+    context = create_context(argv[1]);
 
     if (dns_lookup(context)) {
         printf("DNS lookup failed\n");
 
         return 0;
-    }
-
-    if (reverse_dns_lookup(context)) {
-        printf("Reverse DNS lookup failed\n");
     }
 
     initial_print(context);

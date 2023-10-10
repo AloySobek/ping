@@ -28,10 +28,11 @@ typedef struct args_s {
 
 struct context {
     char numeric_resolved_address[INET_ADDRSTRLEN + 1];
-    char reverse_resolved_address[NI_MAXHOST];
-    char reverse_resolved_port[NI_MAXSERV];
 
     struct sockaddr resolved_address;
+
+    struct timespec start;
+    struct timespec end;
 
     struct timeval timeout;
 
