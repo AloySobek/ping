@@ -8,19 +8,49 @@ struct context *create_context(char *requested_address) {
 
     memset(context, 0, sizeof(struct context));
 
-    context->ttl = 64;
-    context->sleep = 1;
-    context->data_size = 56;
+    context->timeout.tv_sec = 1;
 
-    context->timeout.tv_sec = 5;
+    context->rtts = (double *)malloc(sizeof(double) * 128);
 
     context->requested_address = requested_address;
+
+    context->min = FLT_MAX;
+    context->avg = 0.0f;
+    context->max = FLT_MIN;
+
+    context->rtts_capacity = 128;
+    context->data_size = 56;
+    context->sleep = 1;
+    context->ttl = 64;
 
     return context;
 }
 
 // Free ping state
-void free_context(struct context *context) { free(context); }
+void free_context(struct context *context) {
+    free(context->rtts);
+    free(context);
+}
+
+void insert_rtt(struct context *context, double rtt) {
+    if (context->rtts_length + 1 < context->rtts_capacity) {
+        context->rtts[context->rtts_length++] = rtt;
+    } else {
+        context->rtts_capacity *= 2;
+
+        double *rtts = (double *)malloc(sizeof(double) * context->rtts_capacity);
+
+        for (int i = 0; i < context->rtts_length; ++i) {
+            rtts[i] = context->rtts[i];
+        }
+
+        free(context->rtts);
+
+        context->rtts = rtts;
+
+        insert_rtt(context, rtt);
+    }
+}
 
 // Performs dns lookup, uses raw socket and icmp protocol as search hints
 int dns_lookup(struct context *context) {
@@ -82,6 +112,16 @@ unsigned short checksum(void *b, int len) {
     return result;
 }
 
+double calculate_standard_deviation(struct context *context) {
+    long double deviation_sum = 0.0f;
+
+    for (int i = 0; i < context->rtts_length; ++i) {
+        deviation_sum += (context->rtts[i] - context->avg) * (context->rtts[i] - context->avg);
+    }
+
+    return sqrt(deviation_sum / context->rtts_length);
+}
+
 void initial_print(struct context *context) {
     printf("PING %s (%s) %d(%d) bytes of data\n", context->requested_address,
            context->numeric_resolved_address, context->data_size,
@@ -90,9 +130,11 @@ void initial_print(struct context *context) {
 
 void final_print(struct context *context) {
     printf("--- %s ping statistics ---\n", context->requested_address);
-    printf("%d packets transmitted, %d received, %.1f%% packet loss, time %dms\n",
-           context->sent_messages_count, context->received_messages_count, 0.0f, 0);
-    printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", 0.0f, 0.0f, 0.0f, 0.0f);
+    printf("%d packets transmitted, %d received, %.1f%% packet loss, time %.0fms\n",
+           context->sent_packets, context->received_packets,
+           ((float)context->sent_packets / 100.0f) * context->received_packets, context->time);
+    printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", context->min, context->avg,
+           context->max, calculate_standard_deviation(context));
 }
 
 int ping(struct context *context) {
@@ -117,10 +159,11 @@ int ping(struct context *context) {
     }
 
     struct timespec start, end;
+    struct timespec p_start, p_end;
+
+    clock_gettime(CLOCK_MONOTONIC, &p_start);
 
     while (running) {
-        usleep(context->sleep * 1000000);
-
         struct icmp header;
 
         memset(&header, 0, sizeof(struct icmp));
@@ -131,8 +174,10 @@ int ping(struct context *context) {
 
         header.icmp_type = ICMP_ECHO;
         header.icmp_hun.ih_idseq.icd_id = getpid();
-        header.icmp_hun.ih_idseq.icd_seq = context->sent_messages_count++;
+        header.icmp_hun.ih_idseq.icd_seq = context->sent_packets++;
 
+        // Tmp storage to put header and data in one place, because the data is dynamically
+        // allocated
         char *buffer = (char *)malloc(sizeof(struct icmp) + context->data_size);
 
         memcpy(buffer, &header, sizeof(struct icmp));
@@ -144,6 +189,8 @@ int ping(struct context *context) {
 
         clock_gettime(CLOCK_MONOTONIC, &start);
 
+        // sendto takes the buffer and fills the ip header itself, which is not how recvfrom works,
+        // must be careful here
         if (sendto(context->socketfd, buffer, sizeof(struct icmp) + context->data_size, 0,
                    &context->resolved_address, sizeof(context->resolved_address)) <= 0) {
             printf("Error sending message");
@@ -157,24 +204,51 @@ int ping(struct context *context) {
 
         if ((bytes_received =
                  recvfrom(context->socketfd, buffer, sizeof(struct icmp) + context->data_size, 0,
-                          &received_address, &len)) <= 0) {
-            printf("Error receiving\n");
-        } else {
+                          &received_address, &len)) > 0) {
             clock_gettime(CLOCK_MONOTONIC, &end);
 
-            ++context->received_messages_count;
+            // recvfrom returns ip header, so we must account for that
+            int ip_header_len = (*buffer & 0x0F) * 4;
 
-            double timeElapsed = ((double)(end.tv_nsec - start.tv_nsec)) / 1000000.0;
+            memcpy(&header, buffer + ip_header_len, sizeof(struct icmp));
 
-            long double rtt_msec = (end.tv_sec - start.tv_sec) * 1000.0 + timeElapsed;
+            if (header.icmp_type == ICMP_ECHOREPLY) {
+                double rtt = (end.tv_sec - start.tv_sec) * 1000.0 +
+                             (((double)(end.tv_nsec - start.tv_nsec)) / 1000000.0f);
 
-            printf("%d bytes from %s (%s): icmp_seq=%d ttl=%d, time=%.1Lf ms\n", bytes_received,
-                   context->reverse_resolved_address, context->numeric_resolved_address,
-                   context->sent_messages_count - 1, context->ttl, rtt_msec);
+                insert_rtt(context, rtt);
+
+                if (rtt < context->min) {
+                    context->min = rtt;
+                }
+
+                context->avg = ((context->avg * context->received_packets) + rtt) /
+                               (context->received_packets + 1);
+
+                if (rtt > context->max) {
+                    context->max = rtt;
+                }
+
+                ++context->received_packets;
+
+                printf("%d bytes from %s (%s): icmp_seq=%d ttl=%d, time=%.1f ms\n",
+                       bytes_received - ip_header_len, context->reverse_resolved_address,
+                       context->numeric_resolved_address, context->sent_packets - 1, context->ttl,
+                       rtt);
+            } else {
+                printf("ICMP Type: %d; ICMP Code: %d\n", header.icmp_type, header.icmp_code);
+            }
         }
 
         free(buffer);
+
+        usleep(context->sleep * 1000000);
     }
+
+    clock_gettime(CLOCK_MONOTONIC, &p_end);
+
+    context->time = (p_end.tv_sec - p_start.tv_sec) * 1000.0 +
+                    (((double)(p_end.tv_nsec - p_start.tv_nsec)) / 1000000.0f);
 
     return 0;
 }

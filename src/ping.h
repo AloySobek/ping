@@ -4,6 +4,8 @@
 #include <sys/types.h>
 
 #include <arpa/inet.h>
+#include <float.h>
+#include <math.h>
 #include <netdb.h>
 #include <netinet/ip_icmp.h>
 #include <signal.h>
@@ -25,23 +27,33 @@ typedef struct args_s {
 } args_t;
 
 struct context {
-    int ttl;
-    int sleep;
-    int status;
-    int socketfd;
-    int data_size;
-    int sent_messages_count;
-    int received_messages_count;
-
-    struct timeval timeout;
-
-    char *requested_address;
-
-    struct sockaddr resolved_address;
-
     char numeric_resolved_address[INET_ADDRSTRLEN + 1];
     char reverse_resolved_address[NI_MAXHOST];
     char reverse_resolved_port[NI_MAXSERV];
+
+    struct sockaddr resolved_address;
+
+    struct timeval timeout;
+
+    double *rtts;
+
+    char *requested_address;
+
+    double time;
+
+    double min;
+    double avg;
+    double max;
+
+    int received_packets;
+    int rtts_capacity;
+    int sent_packets;
+    int rtts_length;
+    int data_size;
+    int socketfd;
+    int status;
+    int sleep;
+    int ttl;
 };
 
 #endif
