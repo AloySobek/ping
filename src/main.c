@@ -1,31 +1,93 @@
-#include "ping.h"
+#include <sys/types.h>
 
-volatile static int running = 1;
+#include <arpa/inet.h>
+#include <float.h>
+#include <math.h>
+#include <netdb.h>
+#include <netinet/ip_icmp.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <unistd.h>
+
+#define NOT_ENOUGH_ARGUMENTS -1
+
+typedef struct args_s {
+    char *host;
+    int verbose;
+    int sweep_min;
+    int sweep_step;
+    int sweep_max;
+} args_t;
+
+struct context {
+    char numeric_resolved_address[INET_ADDRSTRLEN + 1];
+
+    struct sockaddr resolved_address;
+
+    struct timespec start;
+    struct timespec end;
+
+    struct timeval timeout;
+
+    double *rtts;
+
+    char *requested_address;
+
+    double time;
+
+    double min;
+    double avg;
+    double max;
+
+    int received_packets;
+    int rtts_capacity;
+    int sent_packets;
+    int max_replies;
+    int rtts_length;
+    int data_size;
+    int socketfd;
+    int status;
+    int sleep;
+    int ttl;
+};
 
 static struct context *context = NULL;
 
 // Initialize ping state
-struct context *create_context(char *requested_address) {
-    struct context *context = (struct context *)malloc(sizeof(struct context));
+int init_context() {
+    if (!(context = (struct context *)malloc(sizeof(struct context)))) {
+        printf("Memory allocation error\n");
+
+        return -1;
+    }
 
     memset(context, 0, sizeof(struct context));
 
     context->timeout.tv_sec = 1;
 
-    context->rtts = (double *)malloc(sizeof(double) * 128);
+    if (!(context->rtts = (double *)malloc(sizeof(double) * 128))) {
+        printf("Memory allocation error\n");
 
-    context->requested_address = requested_address;
+        free(context);
+
+        return -1;
+    }
 
     context->min = FLT_MAX;
     context->avg = 0.0f;
     context->max = FLT_MIN;
 
     context->rtts_capacity = 128;
+    context->max_replies = -1;
     context->data_size = 56;
     context->sleep = 1;
     context->ttl = 64;
 
-    return context;
+    return 0;
 }
 
 // Free ping state
@@ -160,7 +222,7 @@ int ping(struct context *context) {
 
     clock_gettime(CLOCK_MONOTONIC, &context->start);
 
-    while (running) {
+    while (1) {
         struct icmp header = {0};
 
         char *data = (char *)malloc(sizeof(char) * context->data_size);
@@ -266,8 +328,6 @@ int ping(struct context *context) {
 }
 
 void int_handler(int _) {
-    running = 0;
-
     clock_gettime(CLOCK_MONOTONIC, &context->end);
 
     context->time = (context->end.tv_sec - context->start.tv_sec) * 1000.0 +
@@ -280,19 +340,113 @@ void int_handler(int _) {
     exit(0);
 }
 
-int main(int argc, char **argv) {
-    if (argc < 2) {
-        printf("Not enough arguments\n");
+int handle_flag(args_t *args, int argc, char **argv, int i) {
+    char flag;
 
+    flag = argv[i][1];
+
+    if (flag == 'v') {
+        args->verbose = 1;
+        return (0);
+    } else if (flag == 'g' && i + 1 < argc) {
+        args->sweep_min = atoi(argv[i + 1]);
+        return (1);
+    } else if (flag == 'G' && i + 1 < argc) {
+        args->sweep_max = atoi(argv[i + 1]);
+        return (1);
+    } else if (flag == 'h' && i + 1 < argc) {
+        args->sweep_step = atoi(argv[i + 1]);
+        return (1);
+    }
+    return (1000);
+}
+
+int handle_args(args_t *args, int argc, char **argv) {
+    if (argc < 2) {
+        return (NOT_ENOUGH_ARGUMENTS);
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i][0] == '-') {
+            i += handle_flag(args, argc, argv, i);
+        } else if (i + 1 == argc) {
+            args->host = argv[i];
+        } else {
+            return (-1);
+        }
+    }
+
+    if (!args->host) {
+        return (-1);
+    }
+
+    return (0);
+}
+
+void print_usage_error_and_exit() { printf("ping: usage error: Destination address required\n"); }
+
+int handle_arguments(int argc, char **argv) {
+    if (argc < 2) {
+        print_usage_error_and_exit();
+
+        return -1;
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        if (argv[i][0] == '-') {
+            int len = strlen(argv[i]);
+
+            for (int j = 1; j < len; ++j) {
+                char flag = argv[i][j];
+
+                switch (flag) {
+                case 'V': {
+                    printf("Printing version and exiting...\n");
+                    exit(0);
+                }
+                case 'c': {
+                    break;
+                }
+                default: {
+                    break;
+                }
+                }
+            }
+            // Handle flag
+        } else {
+            context->requested_address = argv[i];
+        }
+    }
+
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    // Mandatory:
+    // v(verbose output)
+    // ?(help)
+    // f(flood)
+    // i(interval between sending packets, < 0.2 for super user only)
+    // l(preload, > 3 only for super user)
+    // w(deadline)
+    // W(timeout) wait time for reply packet
+    // p(patter) specify patter for payload data
+    //  r(bypass routing table) questionable
+    // s(packet size) number of bytes as payload
+    // t(ttl)
+    //  T(timestamp) questionable
+    if (init_context()) {
+        return 0;
+    }
+
+    if (handle_arguments(argc, argv)) {
         return 0;
     }
 
     signal(SIGINT, int_handler);
 
-    context = create_context(argv[1]);
-
     if (dns_lookup(context)) {
-        printf("DNS lookup failed\n");
+        printf("ping: %s: Name or service not known", context->requested_address);
 
         return 0;
     }
