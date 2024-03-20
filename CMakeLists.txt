@@ -9,7 +9,8 @@ project(
   VERSION 0.1
   LANGUAGES C)
 
-set(SRC src/main.c)
+set(SRC src/main.c src/cli.c)
 
-include_directories(include)
+include_directories(${CMAKE_SOURCE_DIR})
+
 add_executable(${PROJECT_NAME} ${SRC})
