@@ -18,6 +18,12 @@
 
 #define NOT_ENOUGH_ARGUMENTS -1
 
+struct Node {
+    struct Node *next;
+
+    double x;
+};
+
 typedef struct args_s {
     char *host;
     int verbose;
@@ -27,8 +33,6 @@ typedef struct args_s {
 } args_t;
 
 typedef struct context {
-    char numeric_resolved_address[INET_ADDRSTRLEN + 1];
-
     struct sockaddr resolved_address;
 
     struct timespec start;
@@ -36,7 +40,7 @@ typedef struct context {
 
     struct timeval timeout;
 
-    double *rtts;
+    struct Node *rtts;
 
     char *requested_address;
 
@@ -61,5 +65,8 @@ typedef struct context {
 extern struct context context;
 
 int handle_arguments(int argc, char **argv);
+
+struct Node *list_prepend(struct Node *head, double x);
+void list_free(struct Node *head);
 
 #endif

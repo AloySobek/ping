@@ -1,52 +1,15 @@
 #include "ping.h"
 
-struct context context;
+struct context context = {.timeout = {0},
+                          .min = FLT_MAX,
+                          .max = FLT_MIN,
+                          .rtts_capacity = 128,
+                          .max_replies = -1,
+                          .data_size = 56,
+                          .sleep = 1,
+                          .ttl = 64};
 
-int init_context() {
-    context.timeout.tv_sec = 1;
-
-    if (!(context.rtts = (double *)malloc(sizeof(double) * 128))) {
-        printf("Memory allocation error\n");
-
-        return -1;
-    }
-
-    context.min = FLT_MAX;
-    context.avg = 0.0f;
-    context.max = FLT_MIN;
-
-    context.rtts_capacity = 128;
-    context.max_replies = -1;
-    context.data_size = 56;
-    context.sleep = 1;
-    context.ttl = 64;
-
-    return 0;
-}
-
-void free_context() { free(context.rtts); }
-
-void insert_rtt(double rtt) {
-    if (context.rtts_length + 1 < context.rtts_capacity) {
-        context.rtts[context.rtts_length++] = rtt;
-    } else {
-        context.rtts_capacity *= 2;
-
-        double *rtts = (double *)malloc(sizeof(double) * context.rtts_capacity);
-
-        for (int i = 0; i < context.rtts_length; ++i) {
-            rtts[i] = context.rtts[i];
-        }
-
-        free(context.rtts);
-
-        context.rtts = rtts;
-
-        insert_rtt(rtt);
-    }
-}
-
-int dns_lookup() {
+int dns_lookup(char *addr, size_t len) {
     struct addrinfo hint;
     struct addrinfo *res;
 
@@ -61,10 +24,9 @@ int dns_lookup() {
 
         struct sockaddr_in *resolved_address = (struct sockaddr_in *)&context.resolved_address;
 
-        inet_ntop(AF_INET, &resolved_address->sin_addr, context.numeric_resolved_address,
-                  sizeof(context.numeric_resolved_address));
+        inet_ntop(AF_INET, &resolved_address->sin_addr, addr, len);
 
-        context.numeric_resolved_address[INET_ADDRSTRLEN] = '\0';
+        addr[len] = '\0';
 
         freeaddrinfo(res);
     } else {
@@ -97,36 +59,14 @@ unsigned short checksum(void *b, int len) {
 double calculate_standard_deviation() {
     long double deviation_sum = 0.0f;
 
-    for (int i = 0; i < context.rtts_length; ++i) {
-        deviation_sum += (context.rtts[i] - context.avg) * (context.rtts[i] - context.avg);
+    for (struct Node *iter = context.rtts; iter; iter = iter->next) {
+        deviation_sum += (iter->x - context.avg) * (iter->x - context.avg);
     }
 
     return sqrt(deviation_sum / context.rtts_length);
 }
 
-void initial_print() {
-    printf("PING %s (%s) %d(%d) bytes of data\n", context.requested_address,
-           context.numeric_resolved_address, context.data_size,
-           (int)(context.data_size + sizeof(struct icmp)));
-}
-
-void final_print() {
-    printf("\n--- %s ping statistics ---\n", context.requested_address);
-    printf("%d packets transmitted, %d received, %.1f%% packet loss, time %.0fms\n",
-           context.sent_packets, context.received_packets,
-           (100.0f / ((float)context.sent_packets)) *
-               (context.sent_packets - context.received_packets),
-           context.time);
-
-    if (!context.received_packets) {
-        return;
-    }
-
-    printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", context.min, context.avg, context.max,
-           calculate_standard_deviation());
-}
-
-int ping() {
+int ping(char *addr, size_t len) {
     if ((context.socketfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)) < 0) {
         printf("Error while creating socket: %d\n", context.socketfd);
 
@@ -214,7 +154,7 @@ int ping() {
                 double rtt = (end.tv_sec - start.tv_sec) * 1000.0 +
                              (((double)(end.tv_nsec - start.tv_nsec)) / 1000000.0f);
 
-                insert_rtt(rtt);
+                list_prepend(context.rtts, rtt);
 
                 if (rtt < context.min) {
                     context.min = rtt;
@@ -235,9 +175,8 @@ int ping() {
                 }
 
                 printf("%d bytes from %s (%s): icmp_seq=%d ttl=%d, time=%.1f ms\n",
-                       bytes_received - ip_header_len, reverse_resolved_address,
-                       context.numeric_resolved_address, context.sent_packets - 1, context.ttl,
-                       rtt);
+                       bytes_received - ip_header_len, reverse_resolved_address, addr,
+                       context.sent_packets - 1, context.ttl, rtt);
             } else {
                 printf("ICMP Type: %d; ICMP Code: %d\n", header.icmp_type, header.icmp_code);
             }
@@ -262,93 +201,51 @@ void int_handler(int _) {
     context.time = (context.end.tv_sec - context.start.tv_sec) * 1000.0 +
                    (((double)(context.end.tv_nsec - context.start.tv_nsec)) / 1000000.0f);
 
-    final_print();
-
-    free_context();
+    printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", context.min, context.avg, context.max,
+           calculate_standard_deviation());
 
     exit(0);
 }
 
-int handle_flag(args_t *args, int argc, char **argv, int i) {
-    char flag;
+int app() {
+    char addr[INET_ADDRSTRLEN + 1];
 
-    flag = argv[i][1];
+    if (dns_lookup(addr, INET_ADDRSTRLEN + 1)) {
+        printf("ping: %s: Name or service not known\n", context.requested_address);
 
-    if (flag == 'v') {
-        args->verbose = 1;
-        return (0);
-    } else if (flag == 'g' && i + 1 < argc) {
-        args->sweep_min = atoi(argv[i + 1]);
-        return (1);
-    } else if (flag == 'G' && i + 1 < argc) {
-        args->sweep_max = atoi(argv[i + 1]);
-        return (1);
-    } else if (flag == 'h' && i + 1 < argc) {
-        args->sweep_step = atoi(argv[i + 1]);
-        return (1);
-    }
-    return (1000);
-}
-
-int handle_args(args_t *args, int argc, char **argv) {
-    if (argc < 2) {
-        return (NOT_ENOUGH_ARGUMENTS);
+        return -1;
     }
 
-    for (int i = 1; i < argc; ++i) {
-        if (argv[i][0] == '-') {
-            i += handle_flag(args, argc, argv, i);
-        } else if (i + 1 == argc) {
-            args->host = argv[i];
-        } else {
-            return (-1);
-        }
+    printf("PING %s (%s) %d(%d) bytes of data\n", context.requested_address, addr,
+           context.data_size, (int)(context.data_size + sizeof(struct icmp)));
+
+    ping(addr, INET_ADDRSTRLEN + 1);
+
+    printf("\n--- %s ping statistics ---\n", context.requested_address);
+    printf("%d packets transmitted, %d received, %.1f%% packet loss, time %.0fms\n",
+           context.sent_packets, context.received_packets,
+           (100.0f / ((float)context.sent_packets)) *
+               (context.sent_packets - context.received_packets),
+           context.time);
+
+    if (!context.received_packets) {
+        return -1;
     }
 
-    if (!args->host) {
-        return (-1);
-    }
+    printf("rtt min/avg/max/mdev = %.3f/%.3f/%.3f/%.3f ms\n", context.min, context.avg, context.max,
+           calculate_standard_deviation());
 
-    return (0);
+    return 0;
 }
 
 int main(int argc, char **argv) {
-    // Mandatory:
-    // v(verbose output)
-    // ?(help)
-    // f(flood)
-    // i(interval between sending packets, < 0.2 for super user only)
-    // l(preload, > 3 only for super user)
-    // w(deadline)
-    // W(timeout) wait time for reply packet
-    // p(patter) specify patter for payload data
-    //  r(bypass routing table) questionable
-    // s(packet size) number of bytes as payload
-    // t(ttl)
-    //  T(timestamp) questionable
-    if (init_context()) {
-        return 0;
-    }
-
     if (handle_arguments(argc, argv)) {
-        return 0;
+        return -1;
     }
 
     signal(SIGINT, int_handler);
 
-    if (dns_lookup()) {
-        printf("ping: %s: Name or service not known\n", context.requested_address);
-
-        return 0;
-    }
-
-    initial_print();
-
-    ping();
-
-    final_print();
-
-    free_context();
+    app();
 
     return 0;
 }

@@ -9,7 +9,7 @@ project(
   VERSION 0.1
   LANGUAGES C)
 
-set(SRC src/main.c src/cli.c)
+set(SRC src/main.c src/cli.c src/list.c)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
