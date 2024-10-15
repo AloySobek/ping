@@ -63,7 +63,7 @@ double calculate_standard_deviation() {
         deviation_sum += (iter->x - context.avg) * (iter->x - context.avg);
     }
 
-    return sqrt(deviation_sum / context.rtts_length);
+    return sqrtf(deviation_sum / context.rtts_length);
 }
 
 int ping(char *addr, size_t len) {
