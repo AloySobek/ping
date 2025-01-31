@@ -1,5 +1,18 @@
 #include "ping.h"
 
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+#define FLAG_HELP 0x1
+#define FLAG_VERBOSE 0x2
+
+struct cli {
+    char flags;
+    char *host;
+};
+
 struct context context = {.timeout = {0},
                           .min = FLT_MAX,
                           .max = FLT_MIN,
@@ -207,7 +220,7 @@ void int_handler(int _) {
     exit(0);
 }
 
-int app() {
+int app(struct cli *cli) {
     char addr[INET_ADDRSTRLEN + 1];
 
     if (dns_lookup(addr, INET_ADDRSTRLEN + 1)) {
@@ -216,8 +229,13 @@ int app() {
         return -1;
     }
 
-    printf("PING %s (%s) %d(%d) bytes of data\n", context.requested_address, addr,
-           context.data_size, (int)(context.data_size + sizeof(struct icmp)));
+    char buffer[255];
+
+    sprintf(buffer, ", id 0x%04x = %d", getpid(), getpid());
+
+    printf("PING %s (%s) %d(%d) bytes of data%s\n", context.requested_address, addr,
+           context.data_size, (int)(context.data_size + sizeof(struct icmp)),
+           (cli->flags & FLAG_VERBOSE ? buffer : ""));
 
     ping(addr, INET_ADDRSTRLEN + 1);
 
@@ -238,14 +256,62 @@ int app() {
     return 0;
 }
 
-int main(int argc, char **argv) {
-    if (handle_arguments(argc, argv)) {
+int8_t parse_cli(int argc, char **argv, struct cli *cli) {
+    if (cli == NULL) {
         return -1;
     }
 
+    int option;
+
+    while ((option = getopt(argc, argv, "v")) != -1) {
+        switch (option) {
+        case 'v': {
+            cli->flags |= FLAG_VERBOSE;
+            break;
+        }
+        case 'h': {
+            cli->flags = FLAG_HELP;
+            break;
+        }
+        default: {
+            break;
+        }
+        }
+    }
+
+    if (optind < argc) {
+        cli->host = argv[optind];
+    }
+
+    return 0;
+};
+
+int main(int argc, char **argv) {
+    struct cli cli = {0, NULL};
+    int8_t err;
+
+    if ((err = parse_cli(argc, argv, &cli) != 0)) {
+        return err;
+    }
+
+    if (cli.flags & FLAG_HELP) {
+        printf(
+            "Usage: ft_ping [OPTION...] HOST ...\nSend ICMP ECHO_REQUEST packets to network hosts");
+
+        return 0;
+    }
+
+    if (cli.host == NULL) {
+        printf("ft_ping: missing host operand\nTry 'ft_ping' -? for more information\n");
+
+        return -1;
+    }
+
+    context.requested_address = cli.host;
+
     signal(SIGINT, int_handler);
 
-    app();
+    app(&cli);
 
     return 0;
 }

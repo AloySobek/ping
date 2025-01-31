@@ -8,7 +8,7 @@
 // l(preload, > 3 only for super user)
 // w(deadline)
 // W(timeout) wait time for reply packet
-// p(patter) specify patter for payload data
+// p(pattern) specify pattern for payload data
 //  r(bypass routing table) questionable
 // s(packet size) number of bytes as payload
 // t(ttl)
@@ -59,7 +59,7 @@ int handle_args(args_t *args, int argc, char **argv) {
 
 int handle_arguments(int argc, char **argv) {
     if (argc < 2) {
-        printf("ping: usage error: Destination address required\n");
+        printf("ft_ping: usage error: Destination address required\n");
 
         return -1;
     }
