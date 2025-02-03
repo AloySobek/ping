@@ -14,7 +14,7 @@ set(CMAKE_C_STANDARD_REQUIRED True)
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-set(SRC src/main.c src/cli.c src/list.c)
+set(SRC src/main.c src/config.c src/list.c src/socket.c src/print.c)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
