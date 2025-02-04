@@ -125,15 +125,15 @@ _Bool receive_icmp_segment(struct sockinfo *sockinfo, struct config *config, str
         }
     } else if (((struct icmphdr *)(buf + sizeof(struct iphdr)))->type != ICMP_ECHO) {
         uint8_t *err_buf =
-            buf + sizeof(struct iphdr) + sizeof(struct icmphdr) + sizeof(struct iphdr);
+            buf + sizeof(struct iphdr) + sizeof(struct icmphdr);
 
         if (((struct icmphdr *)err_buf)->un.echo.id == getpid()) {
             print_icmp_err(n_bytes - sizeof(struct iphdr), inet_ntoa(src),
                            ((struct icmphdr *)(buf + sizeof(struct iphdr)))->type,
                            ((struct icmphdr *)(buf + sizeof(struct iphdr)))->code,
                            (config->flags & FLAG_VERBOSE ? 1 : 0),
-                           (config->flags & FLAG_VERBOSE ? (struct iphdr *)buf : NULL),
-                           ((struct icmphdr *)(err_buf)), n_bytes);
+                           (config->flags & FLAG_VERBOSE ? (struct iphdr *)err_buf : NULL),
+                           ((struct icmphdr *)(err_buf + sizeof(struct iphdr))), n_bytes);
         }
     }
 
