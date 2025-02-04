@@ -48,7 +48,7 @@ void print_ping(uint32_t n_bytes, char *host, uint32_t sequence, uint32_t ttl, f
     printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n", n_bytes, host, sequence, ttl, ms);
 }
 
-void print_headers_dump(struct iphdr *ip, struct icmphdr *icmp) {
+void print_headers_dump(struct iphdr *ip, struct icmphdr *icmp, int size) {
     // Convert IP addresses to string format
     char src_ip[INET_ADDRSTRLEN], dst_ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &ip->saddr, src_ip, INET_ADDRSTRLEN);
@@ -69,12 +69,12 @@ void print_headers_dump(struct iphdr *ip, struct icmphdr *icmp) {
            (ntohs(ip->frag_off) & 0x1FFF), ip->ttl, ip->protocol, ntohs(ip->check), src_ip, dst_ip);
 
     // Print ICMP header details
-    printf("ICMP: type %d, code %d, size %ld, id 0x%04x, seq 0x%04x\n", icmp->type, icmp->code,
-           sizeof(struct icmphdr), ntohs(icmp->un.echo.id), ntohs(icmp->un.echo.sequence));
+    printf("ICMP: type %d, code %d, size %d, id 0x%04x, seq 0x%04x\n", icmp->type, icmp->code, size,
+           icmp->un.echo.id, icmp->un.echo.sequence);
 }
 
 void print_icmp_err(uint32_t n_bytes, char *address, int type, int code, _Bool verbose,
-                    struct iphdr *iphdr, struct icmphdr *icmphdr) {
+                    struct iphdr *iphdr, struct icmphdr *icmphdr, int size) {
     char buf[256];
     int n = 0;
 
@@ -97,12 +97,12 @@ void print_icmp_err(uint32_t n_bytes, char *address, int type, int code, _Bool v
     case ICMP_TIME_EXCEEDED: {
         switch (code) {
         case ICMP_EXC_TTL: {
-            n = sprintf(buf, "Time exceeded due to TTL");
+            n = sprintf(buf, "Time to live exceeded");
 
             break;
         }
         case ICMP_EXC_FRAGTIME: {
-            n = sprintf(buf, "Time exceeded due to frattime");
+            n = sprintf(buf, "Time exceeded due to fragtime");
 
             break;
         }
@@ -122,6 +122,6 @@ void print_icmp_err(uint32_t n_bytes, char *address, int type, int code, _Bool v
     printf("%d bytes from %s: %s\n", n_bytes, address, buf);
 
     if (verbose) {
-        print_headers_dump(iphdr, icmphdr);
+        print_headers_dump(iphdr, icmphdr, size);
     }
 }

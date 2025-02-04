@@ -62,7 +62,7 @@ void print_commence_message(struct sockinfo *sockinfo, struct config *config);
 void print_statistics(struct sockinfo *sockinfo, struct stats *stats);
 
 void print_icmp_err(uint32_t n_bytes, char *address, int type, int code, _Bool verbose,
-                    struct iphdr *iphdr, struct icmphdr *icmphdr);
+                    struct iphdr *iphdr, struct icmphdr *icmphdr, int size);
 
 void print_ping(uint32_t n_bytes, char *host, uint32_t sequence, uint32_t ttl, float ms);
 
