@@ -14,7 +14,11 @@ inline struct Node *list_prepend(struct Node *head, double x) {
 }
 
 inline void list_free(struct Node *head) {
-    for (struct Node *iter = head; iter; iter = iter->next) {
-        free(iter);
+    for (struct Node *iter = head; iter;) {
+        struct Node *tmp = iter;
+
+        iter = iter->next;
+
+        free(tmp);
     }
 }

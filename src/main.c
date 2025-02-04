@@ -31,14 +31,17 @@ unsigned short checksum(void *b, int len) {
     return result;
 }
 
-double calculate_standard_deviation() {
+double calculate_standard_deviation(struct Node *list, float avg) {
     long double deviation_sum = 0.0f;
+    uint32_t n = 0;
 
-    // for (struct Node *iter = context.rtts; iter; iter = iter->next) {
-    //     deviation_sum += (iter->x - context.avg) * (iter->x - context.avg);
-    // }
+    for (struct Node *iter = list; iter; iter = iter->next) {
+        deviation_sum += (iter->x - avg) * (iter->x - avg);
 
-    return 0.0f; // sqrtf(deviation_sum / context.rtts_length);
+        n += 1;
+    }
+
+    return sqrtf(deviation_sum / (long double)n);
 }
 
 _Bool send_icmp_segment(struct sockinfo *sockinfo, struct config *config, struct stats *stats) {
@@ -83,7 +86,7 @@ _Bool receive_icmp_segment(struct sockinfo *sockinfo, struct config *config, str
     struct iovec iovec = {.iov_base = buf, .iov_len = sizeof(buf)};
     struct msghdr msghdr = {.msg_iov = &iovec, .msg_iovlen = 1};
 
-    size_t n_bytes;
+    ssize_t n_bytes;
 
     if ((n_bytes = recvmsg(sockinfo->socketfd, &msghdr, MSG_DONTWAIT)) == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -116,16 +119,23 @@ _Bool receive_icmp_segment(struct sockinfo *sockinfo, struct config *config, str
             print_ping(n_bytes - sizeof(struct iphdr), sockinfo->address,
                        ((struct icmphdr *)(buf + sizeof(struct iphdr)))->un.echo.sequence,
                        ((struct iphdr *)buf)->ttl, result.tv_usec / 1000.0f);
-        } else {
-            print_icmp_err(((struct icmphdr *)(buf + sizeof(struct iphdr)))->type,
-                           ((struct icmphdr *)(buf + sizeof(struct iphdr)))->code);
+
+            stats->list = list_prepend(stats->list, result.tv_usec / 1000.0f);
         }
     } else if (((struct icmphdr *)(buf + sizeof(struct iphdr)))->type != ICMP_ECHO) {
         uint8_t *err_buf =
             buf + sizeof(struct iphdr) + sizeof(struct icmphdr) + sizeof(struct iphdr);
 
-        print_icmp_err(((struct icmphdr *)(buf + sizeof(struct iphdr)))->type,
-                       ((struct icmphdr *)(buf + sizeof(struct iphdr)))->code);
+        if (((struct icmphdr *)err_buf)->un.echo.id == getpid()) {
+            struct in_addr src = {.s_addr = ((struct iphdr *)buf)->saddr};
+
+            print_icmp_err(n_bytes - sizeof(struct iphdr), inet_ntoa(src),
+                           ((struct icmphdr *)(buf + sizeof(struct iphdr)))->type,
+                           ((struct icmphdr *)(buf + sizeof(struct iphdr)))->code,
+                           (config->flags & FLAG_VERBOSE ? 1 : 0),
+                           (config->flags & FLAG_VERBOSE ? (struct iphdr *)buf : NULL),
+                           ((struct icmphdr *)(err_buf)));
+        }
     }
 
     return 0;

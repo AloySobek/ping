@@ -14,10 +14,14 @@ set(CMAKE_C_STANDARD_REQUIRED True)
 set(CMAKE_BUILD_TYPE Debug)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+
 set(SRC src/main.c src/config.c src/list.c src/socket.c src/print.c)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
 add_executable(${PROJECT_NAME} ${SRC})
 
+target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Werror)
+
 target_link_libraries(${PROJECT_NAME} m)
+

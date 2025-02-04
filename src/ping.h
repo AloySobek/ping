@@ -8,6 +8,7 @@
 #include <float.h>
 #include <math.h>
 #include <netdb.h>
+#include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
 #include <signal.h>
 #include <stdio.h>
@@ -15,7 +16,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/time.h>
-#include <time.h>
 #include <unistd.h>
 
 #define FLAG_HELP 0x1
@@ -41,34 +41,31 @@ _Bool dns_lookup(struct sockinfo *sockinfo);
 _Bool create_and_configure_socket(struct sockinfo *sockinfo, struct config *config);
 _Bool destroy_socket(struct sockinfo *sockinfo);
 
+struct Node {
+    struct Node *next;
+
+    float x;
+};
+
+struct Node *list_prepend(struct Node *head, double x);
+void list_free(struct Node *head);
+
 struct stats {
     uint32_t sent;
     uint32_t received;
 
-    float min;
-    float avg;
-    float max;
+    struct Node *list;
 };
 
 void print_commence_message(struct sockinfo *sockinfo, struct config *config);
 
 void print_statistics(struct sockinfo *sockinfo, struct stats *stats);
 
-void print_icmp_err(int type, int code);
+void print_icmp_err(uint32_t n_bytes, char *address, int type, int code, _Bool verbose,
+                    struct iphdr *iphdr, struct icmphdr *icmphdr);
 
 void print_ping(uint32_t n_bytes, char *host, uint32_t sequence, uint32_t ttl, float ms);
 
-void int_handler(int _);
-
-struct Node {
-    struct Node *next;
-
-    double x;
-};
-
-struct Node *list_prepend(struct Node *head, double x);
-void list_free(struct Node *head);
-
-double calculate_standard_deviation();
+double calculate_standard_deviation(struct Node *list, float avg);
 
 #endif
