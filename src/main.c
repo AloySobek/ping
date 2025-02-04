@@ -47,7 +47,9 @@ double calculate_standard_deviation(struct Node *list, float avg) {
 _Bool send_icmp_segment(struct sockinfo *sockinfo, struct config *config, struct stats *stats) {
     static uint32_t sequence = 0;
 
-    uint8_t icmp_segment[sizeof(struct icmphdr) + config->size] = {};
+    uint8_t icmp_segment[sizeof(struct icmphdr) + config->size];
+
+    memset(icmp_segment, 0, sizeof(icmp_segment));
 
     struct timespec *timestamp = (void *)(icmp_segment + sizeof(struct icmphdr));
 

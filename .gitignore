@@ -1,2 +1,4 @@
 build
 .cache
+*.o
+ft_ping
