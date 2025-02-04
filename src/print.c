@@ -65,8 +65,8 @@ void print_headers_dump(struct iphdr *ip, struct icmphdr *icmp, int size) {
     // Print IP header details
     printf("Vr HL TOS  Len   ID Flg  off TTL Pro  cks      Src      Dst     Data\n");
     printf(" %d  %d  %02x %04x %04x   %d %04x  %02x  %02x %04x %s  %s\n", ip->version, ip->ihl,
-           ip->tos, ntohs(ip->tot_len), ntohs(ip->id), (ntohs(ip->frag_off) >> 13),
-           (ntohs(ip->frag_off) & 0x1FFF), ip->ttl, ip->protocol, ntohs(ip->check), src_ip, dst_ip);
+           ip->tos, ip->tot_len, ip->id, (ip->frag_off >> 13),
+           (ip->frag_off & 0x1FFF), ip->ttl, ip->protocol, ip->check, src_ip, dst_ip);
 
     // Print ICMP header details
     printf("ICMP: type %d, code %d, size %d, id 0x%04x, seq 0x%04x\n", icmp->type, icmp->code, size,
