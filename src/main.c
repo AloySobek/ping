@@ -83,7 +83,7 @@ _Bool send_icmp_segment(struct sockinfo *sockinfo, struct config *config, struct
 }
 
 _Bool receive_icmp_segment(struct sockinfo *sockinfo, struct config *config, struct stats *stats) {
-    uint8_t buf[2048];
+    uint8_t buf[8192];
 
     struct iovec iovec = {.iov_base = buf, .iov_len = sizeof(buf)};
     struct msghdr msghdr = {.msg_iov = &iovec, .msg_iovlen = 1};
@@ -127,13 +127,13 @@ _Bool receive_icmp_segment(struct sockinfo *sockinfo, struct config *config, str
         uint8_t *err_buf =
             buf + sizeof(struct iphdr) + sizeof(struct icmphdr);
 
-        if (((struct icmphdr *)err_buf)->un.echo.id == getpid()) {
+        if (((struct icmphdr *)(err_buf + sizeof(struct iphdr)))->un.echo.id == getpid()) {
             print_icmp_err(n_bytes - sizeof(struct iphdr), inet_ntoa(src),
                            ((struct icmphdr *)(buf + sizeof(struct iphdr)))->type,
                            ((struct icmphdr *)(buf + sizeof(struct iphdr)))->code,
                            (config->flags & FLAG_VERBOSE ? 1 : 0),
-                           (struct iphdr *)buf,
-                           ((struct icmphdr *)(buf + sizeof(struct iphdr))), n_bytes);
+                           (struct iphdr *)err_buf,
+                           ((struct icmphdr *)(err_buf + sizeof(struct iphdr))), n_bytes);
         }
     }
 
