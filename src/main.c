@@ -133,7 +133,8 @@ _Bool receive_icmp_segment(struct sockinfo *sockinfo, struct config *config, str
                            ((struct icmphdr *)(buf + sizeof(struct iphdr)))->code,
                            (config->flags & FLAG_VERBOSE ? 1 : 0),
                            (struct iphdr *)err_buf,
-                           ((struct icmphdr *)(err_buf + sizeof(struct iphdr))), n_bytes);
+                           ((struct icmphdr *)(err_buf + sizeof(struct iphdr))),
+                           n_bytes - sizeof(struct iphdr) - sizeof(struct icmphdr));
         }
     }
 
