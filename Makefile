@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -Werror -std=c11 -g
+CFLAGS = -Wall -Wextra -Werror
 LDFLAGS = -lm
 
 SRC = src/main.c src/config.c src/list.c src/socket.c src/print.c

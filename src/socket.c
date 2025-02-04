@@ -2,10 +2,8 @@
 
 _Bool dns_lookup(struct sockinfo *sockinfo) {
     struct addrinfo hint = {
-        .ai_family = AF_INET,
-        .ai_socktype = SOCK_RAW,
-        .ai_protocol = IPPROTO_ICMP,
-    };
+        .ai_family = AF_INET, .ai_socktype = SOCK_RAW, .ai_protocol = IPPROTO_ICMP};
+
     struct addrinfo *res = NULL;
 
     int err;

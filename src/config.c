@@ -54,8 +54,8 @@ static void print_usage() {
            "Send ICMP ECHO_REQUEST packets to network hosts\n\n"
            "\t-v - Verbose outpout\n"
            "\t-h - Print this message\n"
-           "\t-t int - TTL(Time To Live) for socket\n"
-           "\t-s int - Payload size\n");
+           "\t-t [short] - TTL(Time To Live) for socket\n"
+           "\t-s [char] - Payload size\n");
 }
 
 _Bool init_config_from_cli(int argc, char **argv, struct config *config) {

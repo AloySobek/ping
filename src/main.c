@@ -49,10 +49,10 @@ _Bool send_icmp_segment(struct sockinfo *sockinfo, struct config *config, struct
 
     uint8_t icmp_segment[sizeof(struct icmphdr) + config->size] = {};
 
-    struct timeval *timestamp = (void *)(icmp_segment + sizeof(struct icmphdr));
+    struct timespec *timestamp = (void *)(icmp_segment + sizeof(struct icmphdr));
 
-    if (gettimeofday(timestamp, NULL) != 0) {
-        printf("ft_ping: gettimeofday error: %s", strerror(errno));
+    if (clock_gettime(CLOCK_REALTIME, timestamp) != 0) {
+        printf("ft_ping: clock_gettime error: %s", strerror(errno));
 
         return 1;
     }
@@ -98,37 +98,34 @@ _Bool receive_icmp_segment(struct sockinfo *sockinfo, struct config *config, str
         return 1;
     }
 
+    struct in_addr src = {.s_addr = ((struct iphdr *)buf)->saddr};
+
     if (((struct icmphdr *)(buf + sizeof(struct iphdr)))->type == ICMP_ECHOREPLY) {
         if (((struct icmphdr *)(buf + sizeof(struct iphdr)))->un.echo.id == getpid()) {
+            struct timespec now;
+            struct timespec *timestamp =
+                (void *)(buf + sizeof(struct iphdr) + sizeof(struct icmphdr));
 
-            struct timeval now;
-            struct timeval *then =
-                (struct timeval *)(buf + sizeof(struct iphdr) + sizeof(struct icmphdr));
-            struct timeval result;
-
-            if (gettimeofday(&now, NULL) == -1) {
-                printf("ft_ping: gettimeofday error: %s", strerror(errno));
+            if (clock_gettime(CLOCK_REALTIME, &now) != 0) {
+                printf("ft_ping: clock_gettime error: %s", strerror(errno));
 
                 return 1;
             }
 
-            timersub(&now, then, &result);
-
             stats->received += 1;
 
-            print_ping(n_bytes - sizeof(struct iphdr), sockinfo->address,
+            print_ping(n_bytes - sizeof(struct iphdr), inet_ntoa(src),
                        ((struct icmphdr *)(buf + sizeof(struct iphdr)))->un.echo.sequence,
-                       ((struct iphdr *)buf)->ttl, result.tv_usec / 1000.0f);
+                       ((struct iphdr *)buf)->ttl, (now.tv_nsec - timestamp->tv_nsec) / 1000000.0f);
 
-            stats->list = list_prepend(stats->list, result.tv_usec / 1000.0f);
+            stats->list =
+                list_prepend(stats->list, (now.tv_nsec - timestamp->tv_nsec) / 1000000.0f);
         }
     } else if (((struct icmphdr *)(buf + sizeof(struct iphdr)))->type != ICMP_ECHO) {
         uint8_t *err_buf =
             buf + sizeof(struct iphdr) + sizeof(struct icmphdr) + sizeof(struct iphdr);
 
         if (((struct icmphdr *)err_buf)->un.echo.id == getpid()) {
-            struct in_addr src = {.s_addr = ((struct iphdr *)buf)->saddr};
-
             print_icmp_err(n_bytes - sizeof(struct iphdr), inet_ntoa(src),
                            ((struct icmphdr *)(buf + sizeof(struct iphdr)))->type,
                            ((struct icmphdr *)(buf + sizeof(struct iphdr)))->code,
@@ -191,6 +188,7 @@ int main(int argc, char **argv) {
         print_statistics(&sockinfo, &stats);
     }
 
+    list_free(stats.list);
     destroy_socket(&sockinfo);
 
     return 0;
